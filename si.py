@@ -1,6 +1,8 @@
 from utilities import *
 from tqdm.notebook import tqdm
 
+max_err = 1e10
+
 
 def simulation(inp, state_space, time, threshold=None, x_out=False):
     """
@@ -22,6 +24,9 @@ def simulation(inp, state_space, time, threshold=None, x_out=False):
     d = state_space.d
     x = state_space.xs
 
+    if len(x) == 0:
+        x = np.zeros((a.shape[0], 1))
+
     # dimension of output and input vectors
     out_dim, in_dim = d.shape[0], d.shape[1]
 
@@ -29,8 +34,9 @@ def simulation(inp, state_space, time, threshold=None, x_out=False):
     out = np.zeros((time, out_dim))
 
     # initialize input states
+    states = np.zeros((time+1, a.shape[0])) if x_out else []
     if x_out:
-        states = np.zeros((time, a.shape[0]))
+        states[0, :] = x.reshape((1, a.shape[0])).copy()
 
     # generate the output sequence
     u = inp.reshape((len(inp), 1))
@@ -41,7 +47,7 @@ def simulation(inp, state_space, time, threshold=None, x_out=False):
                 out[i, j] = 1 if out[i, j] >= threshold else 0
         x = np.matmul(a, x) + np.matmul(b, u)
         if x_out:
-            states[i, :] = x.reshape((1, a.shape[0])).copy()
+            states[i+1, :] = x.reshape((1, a.shape[0])).copy()
         u = out[i, :].reshape((in_dim, 1))
 
     if x_out:
@@ -90,9 +96,26 @@ def initial_state(x, s, state_space, u, y=None, mode=None):
             if mode == 1:  # the input state equation from [x_s,u_s] = Q^s * [x_0,u_0]
                 x = np.linalg.pinv(abcd[size_a:, :size_a]) @ (u[s, :] - abcd[size_a:, size_a:] @ u[0, :])
             elif mode == 2:  # the whole state equation [x_s,u_s] = Q^s * [x_0,u_0]
-                x = np.linalg.lstsq(np.concatenate([abcd[:size_a, :size_a], abcd[size_a:, :size_a]]),
-                                    np.concatenate([x, u[s, :]]) - np.concatenate(
-                                        [abcd[:size_a, size_a:], abcd[size_a:, size_a:]]) @ u[0, :], rcond=None)[0]
+                x = np.linalg.lstsq(abcd[:, :size_a],
+                                    np.concatenate([x, u[s, :]]) - abcd[:, size_a:] @ u[0, :], rcond=None)[0]
+            elif 3 <= mode <= 4:  # estimate the best input state based on initial observation u[0], matrices ABCD and y
+                vec_b = (np.concatenate([x, u[s, :]]) - abcd[:, size_a:] @ u[0, :])[size_a:]
+                vec_a = abcd[size_a:, :size_a]
+                k_abcd = np.concatenate([np.concatenate([a, b], axis=1), np.concatenate([c, d], axis=1)])
+
+                max_v = s if mode == 4 else y.shape[0]
+                for k in range(1, max_v):
+                    pow_m = np.linalg.matrix_power(k_abcd, k).copy()
+                    vec_b = np.concatenate(
+                        [vec_b, y[k, :] - pow_m[size_a:, size_a:] @ u[0, :]], axis=0)
+                    vec_a = np.concatenate([vec_a, pow_m[size_a:, :size_a]], axis=0)
+                x = np.linalg.lstsq(vec_a, vec_b, rcond=None)[0]
+            elif mode == 5:  # https://elib.dlr.de/28249/1/sima-varga-rasp-ident.pdf  Page 61
+                y0 = simulation(u[0, :].reshape((u.shape[1], 1)), state_space, u.shape[0])
+                vec_a = c.copy()  # matrix C
+                for k in range(1, y.shape[0]):
+                    vec_a = np.concatenate([vec_a, c @ np.linalg.matrix_power(a, k).copy()])
+                x = np.linalg.lstsq(vec_a, (y-y0).flatten(), rcond=None)[0]
 
     return x
 
@@ -157,7 +180,7 @@ def io_error(state_space, u, y, thresholds):
             out_rounded = rounding(out, thresholds[thr] / 100)
             loss_thr[thr] += mse(out_rounded, y[i, :]) ** 2
 
-        if loss[0] > 1e50:
+        if loss[0] > max_err:
             break
 
     loss[0] = loss[0] ** (1 / 2)
@@ -214,7 +237,7 @@ def best_error(err_list, thr_list):
         for i in range(1, err_list.shape[0]):
             if err_list[i, j] < best_err[j] and not math.isclose(err_list[i, j], best_err[j]):
                 best_err[j] = err_list[i, j].copy()
-                best_ind[j] = j
+                best_ind[j] = i
 
     # write the best threshold
     for j in range(err_list.shape[1]):
@@ -240,19 +263,21 @@ def visualise(u, y, state_space, mode, thresholds=None, figure_size=None):
         figure_size = (12, 3)
 
     if mode == 0:  # No rounding
-        out, x_states = simulation(u[0, :].reshape((u.shape[1], 1)), state_space, u.shape[0], x_out=True)
+        out, x_states = simulation(u[0, :].reshape((u.shape[1], 1)), state_space[2], u.shape[0], x_out=True)
     elif mode == 1:  # Rounding at each step
-        out, x_states = simulation(u[0, :].reshape((u.shape[1], 1)), state_space, u.shape[0],
+        out, x_states = simulation(u[0, :].reshape((u.shape[1], 1)), state_space[2], u.shape[0],
                                    threshold=thresholds[mode], x_out=True)
     elif mode == 2:  # Rounding at the end
-        out, x_states = simulation(u[0, :].reshape((u.shape[1], 1)), state_space, u.shape[0], x_out=True)
+        out, x_states = simulation(u[0, :].reshape((u.shape[1], 1)), state_space[2], u.shape[0], x_out=True)
         out = rounding(out, threshold=thresholds[mode])
 
     print("The total loss is ", mse(out, y))
     # pd.DataFrame(cum_mse(out_raw, y)).plot()
     pd.DataFrame(y).plot.line(title='Values of adjacency vector (Real)', figsize=figure_size)
     pd.DataFrame(out).plot.line(title='Values of adjacency vector (Model)', figsize=figure_size)
+    plt.axvline(x=state_space[0], ymin=0, ymax=1, color='purple', ls='--')
     pd.DataFrame(y - out).plot.line(title='Real output - Model: Difference', figsize=figure_size)
+    plt.axvline(x=state_space[0], ymin=0, ymax=1, color='purple', ls='--')
     pd.DataFrame(x_states[:, :]).plot.line(title='Values of state X', figsize=figure_size)
 
     return out, x_states

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import math
 
 
@@ -54,3 +55,19 @@ def describe_data(u, y, figure_size=None):
     pd.DataFrame(np.sum(np.vstack([u[:, :], y[-1, :]]), axis=1)).plot(title='Number of edges in a graph',
                                                                       figsize=figure_size, legend=False)
     print("Average number of edges in a graph is ", np.mean(np.sum(np.vstack([u[:, :], y[-1, :]]), axis=1)))
+
+
+def define_periodicity(u):
+    """
+    Define if the input process has periodicity
+    :param u: input data
+    :return: length of period
+    """
+    n = u.shape[0]
+    periodicity = n
+    for i in range(1, n+1):
+        u_copy = np.tile(u[:i, :], (n//i + 1, 1))[:n, :]
+        if np.array_equal(u, u_copy):
+            periodicity = i
+            break
+    return periodicity
