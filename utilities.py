@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import math
 
 
 def rounding(y_hat, threshold=0.5):
@@ -71,3 +69,7 @@ def define_periodicity(u):
             periodicity = i
             break
     return periodicity
+
+
+def int_list(n):
+    return [str(x) for x in range(n)]

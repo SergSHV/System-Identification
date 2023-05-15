@@ -1,5 +1,10 @@
 from utilities import *
+import matplotlib.pyplot as plt
+import math
 from tqdm.notebook import tqdm
+
+from nfoursid.nfoursid import NFourSID
+from nfoursid.utils import Utils
 
 max_err = 1e10
 
@@ -56,7 +61,7 @@ def simulation(inp, state_space, time, threshold=None, x_out=False):
         return out
 
 
-def initial_state(x, s, state_space, u, y=None, mode=None):
+def initial_state(x, s, state_space, u, y, mode=None):
     """
     Identify the initial internal state
 
@@ -73,7 +78,7 @@ def initial_state(x, s, state_space, u, y=None, mode=None):
     b = state_space.b
 
     # Identify the initial internal state
-    if y is None:  # 1st method (based on x[s] and matrices A,B only)
+    if mode is None:  # 1st method (based on x[s] and matrices A,B only)
         p_a = np.linalg.pinv(a)
         for i in range(s):
             x = p_a @ (x - b @ u[s - 1 - i, :])
@@ -81,7 +86,7 @@ def initial_state(x, s, state_space, u, y=None, mode=None):
         c = state_space.c
         d = state_space.d
 
-        if mode is None:  # 2nd method (based on u[s] and y[s] equation)
+        if mode == 0:  # 2nd method (based on u[s] and y[s] equation)
             p_a = np.linalg.pinv(a)
             v = y[s, :] - d @ u[s, :]
             v2 = 0
@@ -298,3 +303,61 @@ def compare_loss(outs, y, labels=None, figure_size=None):
 
     pd.DataFrame(mse_err, columns=labels).plot.line(title='Cumulative MSE', figsize=figure_size)
     return mse_err[-1, :]
+
+
+def compute_all_abcd(u, y, x_mode=None):
+    param_list = []
+    s = (u.shape[0]) / (u.shape[1] + y.shape[1] + 2)
+    t = define_periodicity(u)
+
+    for ns in tqdm(range(1, min(int(s) + 1, t))):
+        nfoursid = NFourSID(pd.DataFrame(np.concatenate((u, y), axis=1), columns=int_list(u.shape[1] + y.shape[1])),
+                            input_columns=int_list(u.shape[1]),
+                            output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:],
+                            num_block_rows=ns)
+        u_hankel = Utils.block_hankel_matrix(nfoursid.u_array, nfoursid.num_block_rows)
+        y_hankel = Utils.block_hankel_matrix(nfoursid.y_array, nfoursid.num_block_rows)
+
+        u_past, u_future = u_hankel[:, :-nfoursid.num_block_rows], u_hankel[:, nfoursid.num_block_rows:]
+        y_past, y_future = y_hankel[:, :-nfoursid.num_block_rows], y_hankel[:, nfoursid.num_block_rows:]
+        u_instrumental_y = np.concatenate([u_future, u_past, y_past, y_future])
+
+        q, r = map(lambda matrix: matrix.T, np.linalg.qr(u_instrumental_y.T, mode='reduced'))
+
+        y_rows, u_rows = nfoursid.y_dim * nfoursid.num_block_rows, nfoursid.u_dim * nfoursid.num_block_rows
+        nfoursid.R32 = r[-y_rows:, u_rows:-y_rows]
+        nfoursid.R22 = r[u_rows:-y_rows, u_rows:-y_rows]
+        nfoursid.R32_decomposition = Utils.eigenvalue_decomposition(nfoursid.R32)
+
+        # [M.Verhaegen & V.Verdult 2007], page 333
+        order = np.linalg.matrix_rank(nfoursid.R32 @ np.linalg.pinv(nfoursid.R22) @ np.concatenate([u_past, y_past]))
+        state_space_identified = nfoursid.system_identification(rank=order)[0]
+        obs_dec = nfoursid._get_observability_matrix_decomposition()
+        x = initial_state((np.power(obs_dec.eigenvalues, .5) @ obs_dec.right_orthogonal)[:, 0], ns,
+                          state_space_identified, u, y, x_mode)
+        state_space_identified.xs = x.reshape((len(x), 1))
+        param_list.append((ns, order, state_space_identified))
+    return param_list
+
+
+def compute_all_abcd_old(u, y, x_mode=None):
+    param_list = []
+    s = (u.shape[0]) / (u.shape[1] + y.shape[1] + 2)
+    t = define_periodicity(u)
+
+    for s in tqdm(range(1, min(int(s) + 1, t))):
+        nfoursid = NFourSID(pd.DataFrame(np.concatenate((u, y), axis=1), columns=int_list(u.shape[1] + y.shape[1])),
+                            input_columns=int_list(u.shape[1]),
+                            output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:],
+                            num_block_rows=s)
+        nfoursid.subspace_identification()
+        ev = np.diagonal(nfoursid.R32_decomposition.eigenvalues)
+
+        for n in range(1, ev[ev > 0].shape[0]+1):
+            state_space_identified = nfoursid.system_identification(rank=n)[0]
+            obs_dec = nfoursid._get_observability_matrix_decomposition()
+            x = initial_state((np.power(obs_dec.eigenvalues, .5) @ obs_dec.right_orthogonal)[:, 0],
+                              s, state_space_identified, u, y, x_mode)
+            state_space_identified.xs = x.reshape((len(x), 1))
+            param_list.append((s, n, state_space_identified))
+    return param_list
