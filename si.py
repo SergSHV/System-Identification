@@ -1,5 +1,4 @@
 from utilities import *
-import matplotlib.pyplot as plt
 import math
 from tqdm.notebook import tqdm
 
@@ -40,20 +39,19 @@ def simulation(inp, state_space, time, threshold=None, x_out=False):
 
     # initialize input states
     states = np.zeros((time+1, a.shape[0])) if x_out else []
-    if x_out:
-        states[0, :] = x.reshape((1, a.shape[0])).copy()
 
     # generate the output sequence
     u = inp.reshape((len(inp), 1))
-    for i in range(time):
-        out[i, :] = (np.matmul(c, x) + np.matmul(d, u))[:, 0]
-        if threshold is not None:
-            for j in range(out_dim):
-                out[i, j] = 1 if out[i, j] >= threshold else 0
-        x = np.matmul(a, x) + np.matmul(b, u)
-        if x_out:
-            states[i+1, :] = x.reshape((1, a.shape[0])).copy()
-        u = out[i, :].reshape((in_dim, 1))
+    if d.shape[0] == len(inp):
+        for i in range(time):
+            out[i, :] = (np.matmul(c, x) + np.matmul(d, u))[:, 0]
+            if threshold is not None:
+                for j in range(out_dim):
+                    out[i, j] = 1 if out[i, j] >= threshold else 0
+            x = np.matmul(a, x) + np.matmul(b, u)
+            if x_out:
+                states[i+1, :] = x.reshape((1, a.shape[0])).copy()
+            u = out[i, :].reshape((in_dim, 1))
 
     if x_out:
         return out, states
@@ -82,7 +80,7 @@ def initial_state(x, s, state_space, u, y, mode=None):
         p_a = np.linalg.pinv(a)
         for i in range(s):
             x = p_a @ (x - b @ u[s - 1 - i, :])
-    else:
+    elif state_space.d.shape[0] == u.shape[1]:
         c = state_space.c
         d = state_space.d
 
@@ -121,6 +119,8 @@ def initial_state(x, s, state_space, u, y, mode=None):
                 for k in range(1, y.shape[0]):
                     vec_a = np.concatenate([vec_a, c @ np.linalg.matrix_power(a, k).copy()])
                 x = np.linalg.lstsq(vec_a, (y-y0).flatten(), rcond=None)[0]
+    else:
+        x = np.zeros(a.shape[0])
 
     return x
 
@@ -201,7 +201,7 @@ def io_error(state_space, u, y, thresholds):
     return loss, best_thr
 
 
-def compute_error(param_list, u, y, thresholds=None, mode="sim"):
+def compute_error(param_list, u, y, thresholds=None, mode="sim", silent=True):
     """
     Compute error for all SI models
     :param param_list: set of SI models
@@ -209,6 +209,7 @@ def compute_error(param_list, u, y, thresholds=None, mode="sim"):
     :param y: output vector
     :param thresholds: threshold values to consider
     :param mode: how to compute the error: based on the input/output data or on the simulated sequence
+    :param silent: progress bar visibility
     :return:
     """
     err_list = np.zeros((len(param_list), 3))
@@ -217,7 +218,7 @@ def compute_error(param_list, u, y, thresholds=None, mode="sim"):
     if thresholds is None:
         thresholds = list(range(40, 51, 3))
 
-    for p in tqdm(range(len(param_list))):
+    for p in tqdm(range(len(param_list)), disable=silent):
         if mode == "sim":
             err_list[p, :], thr_list[p, :] = simulation_error(param_list[p][2], u, y, thresholds)
         elif mode == "io":
@@ -305,16 +306,15 @@ def compare_loss(outs, y, labels=None, figure_size=None):
     return mse_err[-1, :]
 
 
-def compute_all_abcd(u, y, x_mode=None):
+def compute_all_abcd(u, y, x_mode=None, silent=True):
     param_list = []
-    s = (u.shape[0]) / (u.shape[1] + y.shape[1] + 2)
+    s = int((u.shape[0]) / (u.shape[1] + y.shape[1] + 2))+1
     t = define_periodicity(u)
 
-    for ns in tqdm(range(1, min(int(s) + 1, t))):
+    for ns in tqdm(range(1, min(s, t)), disable=silent):
         nfoursid = NFourSID(pd.DataFrame(np.concatenate((u, y), axis=1), columns=int_list(u.shape[1] + y.shape[1])),
-                            input_columns=int_list(u.shape[1]),
-                            output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:],
-                            num_block_rows=ns)
+                            input_columns=int_list(u.shape[1]), num_block_rows=ns,
+                            output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:])
         u_hankel = Utils.block_hankel_matrix(nfoursid.u_array, nfoursid.num_block_rows)
         y_hankel = Utils.block_hankel_matrix(nfoursid.y_array, nfoursid.num_block_rows)
 
@@ -331,33 +331,42 @@ def compute_all_abcd(u, y, x_mode=None):
 
         # [M.Verhaegen & V.Verdult 2007], page 333
         order = np.linalg.matrix_rank(nfoursid.R32 @ np.linalg.pinv(nfoursid.R22) @ np.concatenate([u_past, y_past]))
-        state_space_identified = nfoursid.system_identification(rank=order)[0]
-        obs_dec = nfoursid._get_observability_matrix_decomposition()
-        x = initial_state((np.power(obs_dec.eigenvalues, .5) @ obs_dec.right_orthogonal)[:, 0], ns,
-                          state_space_identified, u, y, x_mode)
-        state_space_identified.xs = x.reshape((len(x), 1))
-        param_list.append((ns, order, state_space_identified))
+        state_space_identified = identify_system(nfoursid, order, s, u, y, x_mode)
+        if state_space_identified is not None:
+            param_list.append((ns, order, state_space_identified))
     return param_list
 
 
-def compute_all_abcd_old(u, y, x_mode=None):
+def compute_all_abcd_old(u, y, x_mode=None, silent=True, n_order=None):
     param_list = []
     s = (u.shape[0]) / (u.shape[1] + y.shape[1] + 2)
     t = define_periodicity(u)
 
-    for s in tqdm(range(1, min(int(s) + 1, t))):
+    for s in tqdm(range(1, min(int(s) + 1, t)), disable=silent):
         nfoursid = NFourSID(pd.DataFrame(np.concatenate((u, y), axis=1), columns=int_list(u.shape[1] + y.shape[1])),
-                            input_columns=int_list(u.shape[1]),
-                            output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:],
-                            num_block_rows=s)
+                            input_columns=int_list(u.shape[1]), num_block_rows=s,
+                            output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:])
         nfoursid.subspace_identification()
         ev = np.diagonal(nfoursid.R32_decomposition.eigenvalues)
 
-        for n in range(1, ev[ev > 0].shape[0]+1):
-            state_space_identified = nfoursid.system_identification(rank=n)[0]
-            obs_dec = nfoursid._get_observability_matrix_decomposition()
-            x = initial_state((np.power(obs_dec.eigenvalues, .5) @ obs_dec.right_orthogonal)[:, 0],
-                              s, state_space_identified, u, y, x_mode)
-            state_space_identified.xs = x.reshape((len(x), 1))
-            param_list.append((s, n, state_space_identified))
+        if n_order is not None:
+            if n_order <= ev[ev > 0].shape[0]+1:
+                state_space_identified = identify_system(nfoursid, n_order, s, u, y, x_mode)
+                if state_space_identified is not None:
+                    param_list.append((s, n_order, state_space_identified))
+        else:
+            for n in range(1, ev[ev > 0].shape[0]+1):
+                state_space_identified = identify_system(nfoursid, n, s, u, y, x_mode)
+                if state_space_identified is not None:
+                    param_list.append((s, n, state_space_identified))
     return param_list
+
+
+def identify_system(nfoursid, order, s, u, y, x_mode):
+    state_space_identified = nfoursid.system_identification(rank=order)[0]
+    obs_dec = nfoursid._get_observability_matrix_decomposition()
+    x = initial_state((np.power(obs_dec.eigenvalues, .5) @ obs_dec.right_orthogonal)[:, 0],
+                      s, state_space_identified, u, y, x_mode)
+    state_space_identified.xs = x.reshape((len(x), 1))
+    return state_space_identified if state_space_identified.d.shape[0]==u.shape[1] else None
+
