@@ -218,17 +218,18 @@ def generate_g(n, num_periods=20, per_length=None, changes=1):
 
         for ch in range(changes):
             curr_dist = np.count_nonzero(u[t, :]!=u[0, :])
+            remained_changes = (period_length-t-1)*changes + (changes - ch)
 
-            if curr_dist < period_length-t-1:
+            if curr_dist < remained_changes:
                 p_add = 1 if sum(u[t, :]) != len(u[t, :]) else 0
                 p_remove = 1 if sum(u[t, :]) != 0 else 0
                 p_keep = (p_add+p_remove)/4 if (p_add+p_remove)!=0 else 1
                 p_sum = p_add + p_remove + p_keep
-                action = np.random.choice(3, p=[p_remove/p_sum, p_keep/p_sum, p_add/p_sum])  # 0 - remove, 1 - keep, 2 - add
+                action = np.random.choice(3, p=[p_remove/p_sum, p_keep/p_sum, p_add/p_sum])  # 0=remove,1=keep,2=add
                 if action == 0:  # remove edge
                     l_edges = []
                     for l in range(u.shape[1]):
-                        if u[t,l]==1:
+                        if u[t, l]==1:
                             l_edges.append(l)
                     edge = np.random.choice(l_edges)
                     y[t,edge]=0
@@ -245,18 +246,18 @@ def generate_g(n, num_periods=20, per_length=None, changes=1):
                 l_remove = []
                 l_keep = []
                 for l in range(u.shape[1]):
-                    a1 = np.concatenate([u[0, :l],u[0, l+1:]])
-                    a2 = np.concatenate([u[t, :l],u[t, l+1:]])
+                    a1 = np.concatenate([u[0, :l], u[0, l+1:]])
+                    a2 = np.concatenate([u[t, :l], u[t, l+1:]])
                     new_d = np.count_nonzero(a1!=a2)
-                    if curr_dist==new_d and curr_dist == period_length-t-1:
+                    if curr_dist == new_d and curr_dist == remained_changes:
                         l_keep.append(l)
-                    if curr_dist!=new_d:
+                    if curr_dist != new_d:
                         if u[0, l] == 1:
                             l_add.append(l)
                         if u[0, l] == 0:
                             l_remove.append(l)
-                p_add = 1 if sum(u[t, :]) != len(u[t, :]) and len(l_add)>0 else 0
-                p_remove = 1 if sum(u[t, :]) != 0 and len(l_remove)>0 else 0
+                p_add = 1 if sum(u[t, :]) != len(u[t, :]) and len(l_add) > 0 else 0
+                p_remove = 1 if sum(u[t, :]) != 0 and len(l_remove) > 0 else 0
 
                 p_keep = 0
                 if len(l_keep)>0:
@@ -264,12 +265,12 @@ def generate_g(n, num_periods=20, per_length=None, changes=1):
                     if p_keep == 0:
                         p_keep = 1
                 p_sum = p_add + p_remove + p_keep
-                action = np.random.choice(3, p=[p_remove/p_sum, p_keep/p_sum, p_add/p_sum])  # 0 - remove, 1 - keep, 2 - add
-                if action == 0: # remove edge
+                action = np.random.choice(3, p=[p_remove/p_sum, p_keep/p_sum, p_add/p_sum])  # 0=remove,1=keep,2=add
+                if action == 0:  # remove edge
                     edge = np.random.choice(l_remove)
                     y[t,edge]=0
 
-                if action == 2: # add edge
+                if action == 2:  # add edge
                     edge = np.random.choice(l_add)
                     y[t,edge]=1
 
@@ -290,13 +291,13 @@ def define_dim(u, getlist=None):
         if s == 0 or s == u.shape[0]:
             list_col.append(i)
             n = n - 1
-        if i>0:
+        elif i > 0:
             r1 = np.linalg.matrix_rank(u[:, :i])
             r2 = np.linalg.matrix_rank(u[:, :i+1])
             if r1 == r2:
                 list_col.append(i)
 
-    n = np.linalg.matrix_rank(get_subarray(u, list_col))
+    n = u.shape[1] - len(list_col)
 
     if getlist:
         return n, list_col
@@ -369,4 +370,27 @@ def graph_simple_sequence3(N, timestamps):
         if t != timestamps - 2:
             u[t + 1, :] = y[t, :].copy()
     return u, y
+
+
+def compute_average(dic, ind):
+    out = dict()
+    for i in dic:
+        min_dif = 100000000
+        max_dif = -10000000
+        out[i] = dict()
+        for j in dic[i]:
+            out[i][j] = 0
+            for k in range(len(dic[i][j])):
+                if dic[i][j][k][ind] is not None:
+                    out[i][j] += dic[i][j][k][ind]
+                if dic[i][j][k][1] is not None:
+                    v = dic[i][j][k][2] - dic[i][j][k][3] - dic[i][j][k][4]
+                    if v > max_dif:
+                        max_dif = v
+                    if v < min_dif:
+                        min_dif = v
+            out[i][j] = out[i][j] / len(dic[i][j])
+        print("Nodes = ", i)
+        print("Min/Max difference:", min_dif, max_dif)
+    return out
 

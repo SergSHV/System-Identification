@@ -342,7 +342,7 @@ def compute_all_abcd_old(u, y, x_mode=None, silent=True, n_order=None):
     s = (u.shape[0]) / (u.shape[1] + y.shape[1] + 2)
     t = define_periodicity(u)
 
-    for s in tqdm(range(1, min(int(s) + 1, t)), disable=silent):
+    for s in tqdm(range(1, min(int(s) + 1, t+1)), disable=silent):
         nfoursid = NFourSID(pd.DataFrame(np.concatenate((u, y), axis=1), columns=int_list(u.shape[1] + y.shape[1])),
                             input_columns=int_list(u.shape[1]), num_block_rows=s,
                             output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:])
@@ -350,7 +350,7 @@ def compute_all_abcd_old(u, y, x_mode=None, silent=True, n_order=None):
         ev = np.diagonal(nfoursid.R32_decomposition.eigenvalues)
 
         if n_order is not None:
-            if n_order <= ev[ev > 0].shape[0]+1:
+            if n_order <= ev[ev > 0].shape[0]:
                 state_space_identified = identify_system(nfoursid, n_order, s, u, y, x_mode)
                 if state_space_identified is not None:
                     param_list.append((s, n_order, state_space_identified))
