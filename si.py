@@ -1,6 +1,5 @@
 from utilities import *
 import math
-from tqdm.notebook import tqdm
 
 from nfoursid.nfoursid import NFourSID
 from nfoursid.utils import Utils
@@ -139,7 +138,7 @@ def simulation_error(state_space, u, y, thresholds):
     inp = u[0, :].reshape((u.shape[1], 1))
 
     # Compute the MSE loss for a given SI model (no rounding)
-    out_raw = simulation(inp, state_space, y.shape[0])
+    out_raw = simulation(inp, state_space, y.shape[0]).copy()
     loss[0] = mse(out_raw, y)
 
     # Compute the MSE loss for a given SI model (rounding at the end)
@@ -311,7 +310,7 @@ def compute_all_abcd(u, y, x_mode=None, silent=True):
     s = int((u.shape[0]) / (u.shape[1] + y.shape[1] + 2))+1
     t = define_periodicity(u)
 
-    for ns in tqdm(range(1, min(s, t)), disable=silent):
+    for ns in tqdm(range(1, min(s, t + 1)), disable=silent):
         nfoursid = NFourSID(pd.DataFrame(np.concatenate((u, y), axis=1), columns=int_list(u.shape[1] + y.shape[1])),
                             input_columns=int_list(u.shape[1]), num_block_rows=ns,
                             output_columns=int_list(u.shape[1] + y.shape[1])[u.shape[1]:])
