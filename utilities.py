@@ -27,8 +27,9 @@ def mse(y1, y2):
     """
     if y1.ndim == 2:
         mse_loss = 0
+        n2 = y2.shape[0]
         for i in range(y1.shape[0]):
-            mse_loss += np.linalg.norm(y1[i, :]-y2[i, :])
+            mse_loss += np.linalg.norm(y1[i, :]-y2[i%n2, :])
         mse_loss = mse_loss/y1.shape[0]
         return mse_loss
     else:
@@ -65,14 +66,14 @@ def describe_data(u, y, figure_size=None):
 
     fig, ax = plt.subplots(figsize=(18, 6))
     ax = sns.heatmap(u.T)
-    ax.set_title('Dynamic of the input vector')
+    ax.set_title('Dynamic of the input vector', fontsize=16)
     ax.set_xlabel('Time t', fontsize=14)
     ax.set_ylabel('Values of vector u[t]', fontsize=14)
 
     print("Average number of edges in a graph is ", np.mean(np.sum(np.vstack([u[:, :], y[-1, :]]), axis=1)))
 
 
-def define_periodicity(u, max_period=None, mode="exact", thresholds=None):
+def define_periodicity(u, min_period=None, max_period=None, mode="exact", thresholds=None):
     """
     Define if the input process has periodicity
     :param max_period:
@@ -88,16 +89,20 @@ def define_periodicity(u, max_period=None, mode="exact", thresholds=None):
 
     periodicity = n
     if mode == "exact":
-        for i in range(1, n+1):
-            u_copy = np.tile(u[:i, :], (n//i + 1, 1))[:n, :]
-            if np.array_equal(u, u_copy):
+        for i in range(1, n + 1):
+            chk = 1
+            for j in range(i + 1, n):
+                if not np.array_equal(u[j % i, :], u[j, :]):
+                    chk = 0
+                    break
+            if chk == 1:
                 periodicity = i
                 break
     else:
         best_copy = np.zeros(u.shape)
         best_loss = float('inf')
-        loss_arr = []
-        for p in tqdm(range(1, max_period+1)):
+        loss_arr = [mse(best_copy, u)]
+        for p in tqdm(range(min_period, min(max_period+1, u.shape[0]+1))):
             u_copy = average_period(u, p)
             mse_b = float('inf')
             best_th = -1
@@ -108,14 +113,14 @@ def define_periodicity(u, max_period=None, mode="exact", thresholds=None):
                     if ms < mse_b:
                         best_th = th / 100
                         mse_b = ms
-            u_copy = rounding(u_copy, best_th)
+            #u_copy = rounding(u_copy, best_th)
             loss = mse(u, u_copy)
             loss_arr.append(loss)
             if loss < best_loss:
                 best_copy = u_copy.copy()
                 best_loss = loss
                 periodicity = p
-                print(best_loss, periodicity)
+                #print(best_loss, periodicity)
     if mode == "exact":
         return periodicity
     else:
@@ -153,12 +158,14 @@ def change_output(y, s, order):
     return y
 
 
-def define_dim(u, getlist=None):
+def define_dim(u, getlist=None, start=None):
     n = u.shape[1]
+    if start is None:
+        start = 0
     list_col = []
-    for i in range(u.shape[1]):
+    for i in range(start, u.shape[1]):
         s = sum(u[:, i])
-        if s == 0 or s == u.shape[0]:
+        if s == 0:  # or (s == u.shape[0] and s != 1):
             list_col.append(i)
             n = n - 1
         elif i > 0:
@@ -206,16 +213,17 @@ def compute_average(dic, ind):
 
 def average_period(u, period):
     n = u.shape[0]
-    full_row = int(n / period)
+    full_row = n // period
     av_arr = np.zeros((period, u.shape[1]))
-    for i in range(n):
+    av_arr[:period, :] = u[:period, :].copy()
+
+    for i in range(period, n):
         av_arr[i % period, :] += u[i, :]
     for i in range(period):
         if n - full_row * period > i:
             av_arr[i, :] /= (full_row + 1)
         else:
             av_arr[i, :] /= full_row
-    av_arr = np.tile(av_arr, (n // period + 1, 1))[:n, :]
     return av_arr
 
 

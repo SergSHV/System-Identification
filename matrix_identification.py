@@ -29,14 +29,37 @@ def remove_dependant_elements(u, r):
 
 def remove_dependant_rows(u, r):
     true_list = set(range(u.shape[0]))
-    new_r = 0
     i = u.shape[0] - 1
-    while new_r != u.shape[1]:
+    while len(true_list) != r:
         new_r = np.linalg.matrix_rank(u[list(true_list.difference({i})), :])
         if new_r == r:
             true_list = true_list.difference({i})
         i -= 1
     return list(true_list)
+
+
+def generate_independent_vectors(matrix, num_edges):
+    step = 0
+    n = matrix.shape[0]
+    r = 0
+    for i in range(n):
+        if i == 0:
+            if sum(matrix[i, -num_edges:]) == 0:
+                matrix[i, step] = 1
+                step += 1
+            r = 1
+        else:
+            if i - step == num_edges:  # all independent vectors are found
+                matrix[i, step] = 1
+                step += 1
+            elif step != n - num_edges:  # no all dependent vectors found
+                new_r = np.linalg.matrix_rank(matrix[:(i + 1), -num_edges:])
+                if new_r == r:
+                    matrix[i, step] = 1
+                    step += 1
+                else:
+                    r += 1
+    return matrix
 
 
 def gen_vectors(u, per):
@@ -50,36 +73,27 @@ def gen_vectors(u, per):
     r = np.linalg.matrix_rank(matrix)
 
     if r == matrix.shape[1]:
-        basic_var = list(range(matrix.shape[1]))
+        dim = matrix.shape[1]
+        basic_var = list(range(dim))
     else:
         matrix = matrix[~np.all(matrix == 0, axis=1)]
-        matrix = matrix[remove_dependant_elements(matrix, r), :]
+        matrix = matrix[:binary_search(matrix, r, matrix.shape[0], r), :]
+        #  matrix = matrix[remove_dependant_elements(matrix, r), :]
         basic_var = remove_dependant_rows(matrix.T, r)  # remove_dependant_elements(A.T,r)
-
-    dim = len(basic_var)
+        dim = len(basic_var)
     vec = np.zeros((per, dim))
+    vec[:, -u.shape[1]:] = u[:per, :]
+    vec[basic_var, :] = generate_independent_vectors(vec[basic_var, :], u.shape[1])
 
-    vec[:per, -u.shape[1]:] = u[:per, :]
-    for i in basic_var:
-        vec[i, :dim - u.shape[1]] = np.random.randint(2, size=dim - u.shape[1])
-        while min(vec[i, :]) == max(vec[i, :]):
-            vec[i, :dim - u.shape[1]] = np.random.randint(2, size=dim - u.shape[1])
-        if i != 0:
-            r1, r2 = 0, 0
-            while r1 == r2:
-                vec[i, :dim - u.shape[1]] = np.random.randint(2, size=dim - u.shape[1])
-                if min(vec[i, :]) != max(vec[i, :]):
-                    r1 = np.linalg.matrix_rank(vec[:i, :])
-                    r2 = np.linalg.matrix_rank(vec[:i + 1, :])
-
-    for i in range(per):
-        if i not in basic_var:
-            roots = np.linalg.lstsq(matrix[:, basic_var], matrix[:, i], rcond=None)[0]
-            x = np.zeros((1, dim - u.shape[1]))
-            for v in basic_var:
-                for j in range(dim - u.shape[1]):
-                    x[0, j] = x[0, j] + vec[v, j] * roots[v]
-            vec[i, :dim - u.shape[1]] = x.copy()
+    if r != matrix.shape[1]:
+        for i in range(per):
+            if i not in basic_var:
+                roots = np.linalg.lstsq(matrix[:, basic_var], matrix[:, i], rcond=None)[0]
+                x = np.zeros((1, dim - u.shape[1]))
+                for v in basic_var:
+                    for j in range(dim - u.shape[1]):
+                        x[0, j] += vec[v, j] * roots[v]
+                vec[i, :dim - u.shape[1]] = x.copy()
     return vec
 
 
