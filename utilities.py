@@ -29,8 +29,8 @@ def mse(y1, y2):
         mse_loss = 0
         n2 = y2.shape[0]
         for i in range(y1.shape[0]):
-            mse_loss += np.linalg.norm(y1[i, :]-y2[i%n2, :])
-        mse_loss = mse_loss/y1.shape[0]
+            mse_loss += np.sum((y1[i, :]-y2[i%n2, :])**2)
+        mse_loss = mse_loss**(1/2)/y1.shape[0]
         return mse_loss
     else:
         return np.linalg.norm(y1-y2)
@@ -96,7 +96,7 @@ def define_periodicity(u, min_period=None, max_period=None, mode="exact", thresh
                     chk = 0
                     break
             if chk == 1:
-                periodicity = i
+                periodicity = i+1
                 break
     else:
         best_copy = np.zeros(u.shape)
@@ -117,7 +117,7 @@ def define_periodicity(u, min_period=None, max_period=None, mode="exact", thresh
             loss = mse(u, u_copy)
             loss_arr.append(loss)
             if loss < best_loss:
-                best_copy = u_copy.copy()
+                best_copy = []  #u_copy.copy()
                 best_loss = loss
                 periodicity = p
                 #print(best_loss, periodicity)
@@ -215,15 +215,22 @@ def average_period(u, period):
     n = u.shape[0]
     full_row = n // period
     av_arr = np.zeros((period, u.shape[1]))
-    av_arr[:period, :] = u[:period, :].copy()
 
-    for i in range(period, n):
+    for i in range(full_row):
+        av_arr[:, :] += u[period*i:period*(i+1), :]
+    for i in range(full_row*period, n):
         av_arr[i % period, :] += u[i, :]
-    for i in range(period):
-        if n - full_row * period > i:
-            av_arr[i, :] /= (full_row + 1)
-        else:
-            av_arr[i, :] /= full_row
+
+    #av_arr[:period, :] += u[:period, :]#.copy()
+    #for i in range(period, n):
+    #    av_arr[i % period, :] += u[i, :]
+    av_arr[:(n - full_row * period), :] /= (full_row + 1)
+    av_arr[(n - full_row * period):, :] /= full_row
+    #for i in range(period):
+    #    if n - full_row * period > i:
+    #        av_arr[i, :] /= (full_row + 1)
+    #    else:
+    #        av_arr[i, :] /= full_row
     return av_arr
 
 

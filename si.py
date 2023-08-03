@@ -367,5 +367,19 @@ def identify_system(nfoursid, order, s, u, y, x_mode):
     x = initial_state((np.power(obs_dec.eigenvalues, .5) @ obs_dec.right_orthogonal)[:, 0],
                       s, state_space_identified, u, y, x_mode)
     state_space_identified.xs = x.reshape((len(x), 1))
-    return state_space_identified if state_space_identified.d.shape[0]==u.shape[1] else None
+    return state_space_identified if state_space_identified.d.shape[0] == u.shape[1] else None
 
+
+def sg_gen(u, y):
+    """
+    SG-gen algorithm for modelling temporal algorithm
+    :param u: input vectors
+    :param y: output vectors
+    :return: system matrix q, initial state vector x0
+    """
+    p = define_periodicity(u)
+    param_list = compute_all_abcd_old(u, y, n_order=p - u.shape[1])
+    err_list, thr_list = compute_error(param_list, u, y, list(range(50, 51, 5)), mode="sim")
+    model = (param_list[best_error(err_list, thr_list)[0][0]][2])
+    q = np.concatenate([np.concatenate([model.a, model.b], axis=1), np.concatenate([model.c, model.d], axis=1)])
+    return q, model.xs

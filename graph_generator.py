@@ -231,3 +231,32 @@ def generate_edge_order(dim, order):
         order_inc = np.random.permutation(dim)
         order_dec = np.random.permutation(dim)
     return order_inc, order_dec
+
+
+def generate_noise_data(size, num_rand, periods):
+    timestamps = int((size * (size - 1))) * periods
+    u, y = graph_simple_sequence(size, timestamps, 1, 1)
+
+    u = np.concatenate([u, np.zeros((u.shape[0], num_rand))], axis=1)
+    y = np.concatenate([y, np.zeros((y.shape[0], num_rand))], axis=1)
+
+    for t in range(0, u.shape[0]):
+        for i in range(num_rand):
+            y[t, -(i + 1)] = np.random.choice([0, 1], size=(1, 1), p=[1 / 2, 1 / 2])
+        if t != u.shape[0] - 1:
+            u[t + 1, -num_rand:] = y[t, -num_rand:].copy()
+    return u, y
+
+
+def generate_noise_data2(size, periods, num_changes=2):
+    timestamps = int((size * (size - 1))) * periods
+    u, y = graph_simple_sequence(size, timestamps, 1, 1)
+    for i in range(u.shape[0]):
+        ind_list = np.random.randint(u.shape[1], size=num_changes)
+        for ind in ind_list:
+            y[i, ind] = 1 - y[i, ind]
+        if i + 1 != u.shape[0]:
+            u[i + 1, :] = y[i, :].copy()
+        else:
+            u[0, :] = y[i, :].copy()
+    return u, y

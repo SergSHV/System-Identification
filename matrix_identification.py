@@ -63,12 +63,14 @@ def generate_independent_vectors(matrix, num_edges):
 
 
 def gen_vectors(u, per):
-    inp_dim = define_dim(u)
+    inp_dim, ind_list = define_dim(u, getlist=True)
+    ind_list = np.delete(range(u.shape[1]), ind_list)
+
     matrix = np.zeros((inp_dim * per, per))
 
     for d in range(per):
         for i in range(u.shape[0]):  # create Matrix
-            matrix[d * inp_dim:(d + 1) * inp_dim, (i - d) % (matrix.shape[1])] = u[i, :].T.copy()
+            matrix[d * inp_dim:(d + 1) * inp_dim, (i - d) % (matrix.shape[1])] = u[i, ind_list].T.copy()
 
     r = np.linalg.matrix_rank(matrix)
 
@@ -127,3 +129,13 @@ def simulate_sequence(u, q, x):
         v = q @ v
         out[i, :] = v[-u.shape[1]:].copy()
     return out
+
+
+def lpg_gen(u, y):
+    """
+    :param u: input vectors
+    :param y: output vectors
+    :return: system matrix q, initial state vector x0
+    """
+    q, x = identify_system(u)
+    return q, x[:-u.shape[1]]
