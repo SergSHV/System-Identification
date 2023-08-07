@@ -29,7 +29,7 @@ Generate a network using NetworkX package
 Generate a network using NetworkX package 
 
 
-    >>> import pi
+    >>> import pt
     >>> import graph_generator as gg
     >>> N, perionds, changes= 10, 4, 8   # N - number of nodes, T - timestamps
     >>> u, y = gg.generate_noise_data2(N, perionds, changes)
