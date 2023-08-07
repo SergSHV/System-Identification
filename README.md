@@ -31,5 +31,6 @@ Generate a network using NetworkX package
 
     >>> import pi
     >>> import graph_generator as gg
-    >>> u, y = gg.generate_noise_data2(10, 4, 8)
+    >>> N, perionds, changes= 10, 4, 8   # N - number of nodes, T - timestamps
+    >>> u, y = gg.generate_noise_data2(N, perionds, changes)
     >>> out = pt.lg_gen(u, 5, modelling=True)
