@@ -36,6 +36,24 @@ def mse(y1, y2):
         return np.linalg.norm(y1-y2)
 
 
+def norm_n(y, n):
+    """
+    Compute a norm of a matrix using n rows
+    :param y: vector 1
+    :param n: n rows
+    :return: norm between vectors
+    """
+    norm = 0
+    n_rows = y.shape[0]
+    norm_dict = np.zeros(n_rows)
+    for i in range(n_rows):
+        norm_dict[i] = np.sum((y[i, :])**2)
+    for i in range(n):
+        norm += norm_dict[i % n_rows]
+    norm = norm**(1/2)/n
+    return norm
+
+
 def cum_mse(y1, y2):
     """
     Compute a cumulative norm between two vectors
@@ -51,29 +69,31 @@ def cum_mse(y1, y2):
     return err
 
 
-def describe_data(u, y, figure_size=None):
+def describe_data(u, y, figure_size=None, title=None):
     """
     Describe the Initial Data
     :param u: input data
     :param y: output data
     :param figure_size: plot size of figures
     """
+    if title is None:
+        title = 'Dynamic of the input vector'
 
     if figure_size is None:
         figure_size = (12, 3)
     pd.DataFrame(np.sum(np.vstack([u[:, :], y[-1, :]]), axis=1)).plot(title='Number of edges in a graph',
                                                                       figsize=figure_size, legend=False)
 
-    fig, ax = plt.subplots(figsize=(18, 6))
+    fig, ax = plt.subplots(figsize=figure_size)
     ax = sns.heatmap(u.T)
-    ax.set_title('Dynamic of the input vector', fontsize=16)
-    ax.set_xlabel('Time t', fontsize=14)
-    ax.set_ylabel('Values of vector u[t]', fontsize=14)
+    ax.set_title(title, fontsize=16)
+    ax.set_xlabel('Time k', fontsize=14)
+    ax.set_ylabel('Values of vector a[k]', fontsize=14)
 
     print("Average number of edges in a graph is ", np.mean(np.sum(np.vstack([u[:, :], y[-1, :]]), axis=1)))
 
 
-def define_periodicity(u, min_period=None, max_period=None, mode="exact", thresholds=None):
+def define_periodicity(u, min_period=None, max_period=None, mode="exact", thresholds=None, silent=False):
     """
     Define if the input process has periodicity
     :param max_period:
@@ -96,13 +116,13 @@ def define_periodicity(u, min_period=None, max_period=None, mode="exact", thresh
                     chk = 0
                     break
             if chk == 1:
-                periodicity = i+1
+                periodicity = i
                 break
     else:
         best_copy = np.zeros(u.shape)
         best_loss = float('inf')
         loss_arr = [mse(best_copy, u)]
-        for p in tqdm(range(min_period, min(max_period+1, u.shape[0]+1))):
+        for p in tqdm(range(min_period, min(max_period+1, u.shape[0]+1)), disable=silent):
             u_copy = average_period(u, p)
             mse_b = float('inf')
             best_th = -1
@@ -214,18 +234,22 @@ def compute_average(dic, ind):
 def average_period(u, period):
     n = u.shape[0]
     full_row = n // period
-    av_arr = np.zeros((period, u.shape[1]))
+    av_arr = u[:period, :].copy()
+    m_rem = n - full_row*period
 
-    for i in range(full_row):
+    for i in range(1, full_row):
         av_arr[:, :] += u[period*i:period*(i+1), :]
-    for i in range(full_row*period, n):
-        av_arr[i % period, :] += u[i, :]
+    if m_rem > 0:
+        av_arr[:m_rem, :] += u[full_row*period:, :]
+
+    #for i in range(full_row*period, n):
+    #    av_arr[i % period, :] += u[i, :]
 
     #av_arr[:period, :] += u[:period, :]#.copy()
     #for i in range(period, n):
     #    av_arr[i % period, :] += u[i, :]
-    av_arr[:(n - full_row * period), :] /= (full_row + 1)
-    av_arr[(n - full_row * period):, :] /= full_row
+    av_arr[:m_rem, :] /= (full_row + 1)
+    av_arr[m_rem:, :] /= full_row
     #for i in range(period):
     #    if n - full_row * period > i:
     #        av_arr[i, :] /= (full_row + 1)
